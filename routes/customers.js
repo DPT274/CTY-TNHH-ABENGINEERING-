@@ -1,56 +1,55 @@
 const express = require('express');
 const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
+const supabase = require('../config/supabase');
+const axios = require('axios'); // Nhớ cài đặt axios ở backend nếu chưa có
 
-// Khởi tạo Supabase Client (Hãy đảm bảo bạn đã cấu hình biến môi trường này trong file .env hoặc trên Render)
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
-);
+// 1. ADMIN LẤY DANH SÁCH KHÁCH HÀNG
+router.get('/', async (req, res) => {
+    try {
+        const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
-// API xử lý đồng bộ và lưu thông tin khách hàng
+// 2. ZALO APP GỬI THÔNG TIN VÀ TOKEN LÊN ĐỂ GIẢI MÃ
 router.post('/verify-zalo', async (req, res) => {
     try {
-        const { phone, name, avatar } = req.body;
+        const { phoneToken, accessToken, name, avatar } = req.body;
+        if (!phoneToken || !accessToken) return res.status(400).json({ error: 'Thiếu token từ Zalo' });
 
-        // 1. Kiểm tra dữ liệu đầu vào cơ bản
-        if (!phone) {
-            return res.status(400).json({ error: "Số điện thoại không được để trống!" });
-        }
-
-        // Định dạng lại số điện thoại cho chuẩn (Ví dụ bỏ khoảng trắng nếu có)
-        const cleanPhone = phone.replace(/\s+/g, '');
-
-        console.log(`Đang xử lý đồng bộ cho SĐT: ${cleanPhone}`);
-
-        // 2. Tiến hành lưu hoặc cập nhật dữ liệu vào bảng customers dựa trên cột 'phone'
-        const { data, error } = await supabase
-            .from('customers')
-            .upsert(
-                {
-                    phone: cleanPhone,
-                    name: name || "Người dùng Zalo",
-                    avatar: avatar || ""
-                },
-                { onConflict: 'phone' } // Nếu trùng số điện thoại thì cập nhật Tên và Avatar mới
-            )
-            .select();
-
-        if (error) {
-            console.error("Lỗi Supabase:", error.message);
-            return res.status(500).json({ error: "Không thể lưu dữ liệu vào cơ sở dữ liệu", details: error.message });
-        }
-
-        // 3. Trả kết quả thành công về cho Frontend
-        return res.status(200).json({
-            success: true,
-            message: "Đồng bộ thông tin khách hàng thành công!",
-            customer: data[0]
+        // Giải mã token Zalo
+        const ZALO_SECRET_KEY = process.env.ZALO_SECRET_KEY; // Lấy từ file .env
+        const zaloResponse = await axios.get('https://graph.zalo.me/v2.0/me/info', {
+            headers: {
+                'access_token': accessToken,
+                'code': phoneToken,
+                'secret_key': ZALO_SECRET_KEY
+            }
         });
 
-    } catch (err) {
-        console.error("Lỗi hệ thống Backend:", err.message);
-        return res.status(500).json({ error: "Lỗi hệ thống nghiêm trọng", details: err.message });
+        if (zaloResponse.data.error) {
+            return res.status(400).json({ error: "Giải mã thất bại", details: zaloResponse.data });
+        }
+
+        // Lấy số thật và format về 090...
+        let realPhone = zaloResponse.data.data.number;
+        if (realPhone.startsWith('84')) realPhone = '0' + realPhone.slice(2);
+
+        // Lưu vào Supabase (Dùng upsert như code gốc của bạn)
+        const { data, error } = await supabase
+            .from('customers')
+            .upsert([{ phone: realPhone, name: name, avatar: avatar }])
+            .select();
+
+        if (error) throw error;
+
+        // Trả SĐT thật về cho Mini App
+        res.json({ success: true, phone: realPhone });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
