@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
         const { data, error } = await supabase
             .from('utilities')
             .select('*')
-            .order('order_index', { ascending: true });
+            .order('id', { ascending: true }); // Chốt thứ tự theo ID
 
         if (error) throw error;
         res.json(data);
@@ -20,80 +20,21 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 2. THÊM DANH MỤC (Đã bỏ yêu cầu Path, fix lỗi tên file tiếng Việt)
-router.post('/', upload.single('image'), async (req, res) => {
-    try {
-        const { name, order_index } = req.body;
-        const file = req.file;
-        if (!file) return res.status(400).json({ error: 'Vui lòng chọn Icon!' });
-        if (!name) return res.status(400).json({ error: 'Vui lòng nhập tên danh mục!' });
-
-        // Tách đuôi file và đổi tên thành chuỗi số an toàn
-        const extension = file.originalname.split('.').pop();
-        const fileName = `utilities/${Date.now()}.${extension}`;
-
-        await supabase.storage
-            .from('ab_engineering_bucket')
-            .upload(fileName, file.buffer, { contentType: file.mimetype });
-
-        const { data: { publicUrl } } = supabase.storage
-            .from('ab_engineering_bucket')
-            .getPublicUrl(fileName);
-
-        // Tự động gán path = '#' để DB không báo lỗi thiếu dữ liệu
-        const { data, error } = await supabase
-            .from('utilities')
-            .insert([{ name, path: '#', image: publicUrl, order_index: parseInt(order_index) || 0 }])
-            .select();
-
-        if (error) throw error;
-        res.json({ message: 'Thêm danh mục chức năng thành công!', data });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// 3. SỬA DANH MỤC
+// 2. CHỈ CẬP NHẬT ICON (Đã khóa chức năng sửa tên/đường dẫn)
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, order_index } = req.body;
         const file = req.file;
 
-        let updateData = { name, order_index: parseInt(order_index) || 0 };
+        if (!file) return res.status(400).json({ error: 'Vui lòng chọn Icon mới!' });
 
-        if (file) {
-            const extension = file.originalname.split('.').pop();
-            const fileName = `utilities/${Date.now()}.${extension}`;
-
-            await supabase.storage.from('ab_engineering_bucket').upload(fileName, file.buffer, { contentType: file.mimetype });
-            const { data: { publicUrl } } = supabase.storage.from('ab_engineering_bucket').getPublicUrl(fileName);
-            updateData.image = publicUrl;
-        }
-
-        const { error } = await supabase.from('utilities').update(updateData).eq('id', id);
-        if (error) throw error;
-        res.json({ message: 'Cập nhật danh mục thành công!' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// 4. THÊM MỚI: XÓA DANH MỤC VÀ DỌN ẢNH TRÊN STORAGE
-router.delete('/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        // Lấy link ảnh trước khi xóa
-        const { data: utility, error: fetchError } = await supabase
+        // Lấy link ảnh cũ để xóa khỏi Storage (Tiết kiệm dung lượng)
+        const { data: utility } = await supabase
             .from('utilities')
             .select('image')
             .eq('id', id)
             .single();
 
-        if (fetchError) throw fetchError;
-
-        // Xóa file ảnh trên Cloud
         if (utility && utility.image) {
             const parts = utility.image.split('/ab_engineering_bucket/');
             if (parts.length > 1) {
@@ -102,14 +43,31 @@ router.delete('/:id', async (req, res) => {
             }
         }
 
-        // Xóa dữ liệu trong DB
-        const { error } = await supabase.from('utilities').delete().eq('id', id);
-        if (error) throw error;
+        // Tải ảnh mới lên
+        const extension = file.originalname.split('.').pop();
+        const newFileName = `utilities/${Date.now()}.${extension}`;
 
-        res.json({ message: 'Đã xóa danh mục thành công!' });
+        await supabase.storage
+            .from('ab_engineering_bucket')
+            .upload(newFileName, file.buffer, { contentType: file.mimetype });
+
+        const { data: { publicUrl } } = supabase.storage
+            .from('ab_engineering_bucket')
+            .getPublicUrl(newFileName);
+
+        // Lưu link ảnh mới vào DB
+        const { error } = await supabase
+            .from('utilities')
+            .update({ image: publicUrl })
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ message: 'Cập nhật Icon thành công!', imageUrl: publicUrl });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
+
+// KHÔNG CÓ ROUTER.POST VÀ ROUTER.DELETE NỮA
 
 module.exports = router;
