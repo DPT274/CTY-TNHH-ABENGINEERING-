@@ -8,31 +8,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Import tất cả các file trong thư mục routes
-const bannerRoutes = require('./routes/banners');
-const productRoutes = require('./routes/products');
-const utilityRoutes = require('./routes/utilities');
-const customerRoutes = require('./routes/customers');
-const jobRoutes = require('./routes/jobs');        // Đã thêm
-const newsRoutes = require('./routes/news');        // Đã thêm
-const aboutRoutes = require('./routes/about');      // Đã thêm
-const branchRoutes = require('./routes/branches');  // Đã thêm
-const hotlineRoutes = require('./routes/hotlines'); // Đã thêm
-const machiningRoutes = require('./routes/machining');// Đã thêm
-const projectRoutes = require('./routes/projects'); // Đã thêm
+// Import các router - Đảm bảo các file này tồn tại và có 'module.exports = router'
+try {
+    app.use('/api/banners', require('./routes/banners'));
+    app.use('/api/products', require('./routes/products'));
+    app.use('/api/utilities', require('./routes/utilities'));
+    app.use('/api/customers', require('./routes/customers'));
+    app.use('/api/jobs', require('./routes/jobs'));
+    app.use('/api/news', require('./routes/news'));
+    app.use('/api/about', require('./routes/about'));
+    app.use('/api/branches', require('./routes/branches'));
+    app.use('/api/hotlines', require('./routes/hotlines'));
+    app.use('/api/machining', require('./routes/machining'));
+    app.use('/api/projects', require('./routes/projects'));
+} catch (error) {
+    console.error("Lỗi khi import routes: Kiểm tra xem các file trong thư mục routes có module.exports không!");
+}
 
-// 2. Khai báo các đường dẫn API
-app.use('/api/banners', bannerRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/utilities', utilityRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/jobs', jobRoutes);        // Đã thêm
-app.use('/api/news', newsRoutes);        // Đã thêm
-app.use('/api/about', aboutRoutes);      // Đã thêm
-app.use('/api/branches', branchRoutes);  // Đã thêm
-app.use('/api/hotlines', hotlineRoutes); // Đã thêm
-app.use('/api/machining', machiningRoutes);// Đã thêm
-app.use('/api/projects', projectRoutes); // Đã thêm
+// Route kiểm tra server chạy ổn không
+app.get('/', (req, res) => {
+    res.send('Server AB Engineering is running!');
+});
 
 // Khởi động Server
 const PORT = process.env.PORT || 3000;
