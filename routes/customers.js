@@ -1,11 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
-const axios = require('axios');
 
+// ==========================================
+// 1. LẤY DANH SÁCH KHÁCH HÀNG (DÀNH CHO ADMIN)
+// ==========================================
 router.get('/', async (req, res) => {
     try {
-        const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+        const { data, error } = await supabase
+            .from('customers')
+            .select('*')
+            .order('created_at', { ascending: false }); // Xếp người mới nhất lên đầu
+
         if (error) throw error;
         res.json(data);
     } catch (error) {
@@ -13,43 +19,44 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/verify-zalo', async (req, res) => {
+// ==========================================
+// 2. LƯU HOẶC CẬP NHẬT KHÁCH HÀNG (TỪ ZALO APP)
+// ==========================================
+router.post('/', async (req, res) => {
     try {
-        const { phoneToken, accessToken, name, avatar } = req.body;
+        const { name, phone } = req.body;
 
-        // 1. Luôn ưu tiên lưu Name và Avatar vào trước dù chưa có SĐT
-        if (name || avatar) {
-            await supabase.from('customers').upsert([{
-                // Nếu không có SĐT thì dùng ID tạm để lưu avatar/tên, nếu có sđt sẽ update sau
-                phone: 'chua_co_sdt_' + Date.now(),
-                name: name || 'Khách',
-                avatar: avatar || ''
-            }]);
+        if (!name || !phone) {
+            return res.status(400).json({ error: 'Thiếu thông tin Họ tên hoặc Số điện thoại' });
         }
 
-        if (!phoneToken || !accessToken) return res.status(400).json({ error: 'Thiếu token từ Zalo' });
-
-        const ZALO_SECRET_KEY = process.env.ZALO_SECRET_KEY;
-        const zaloResponse = await axios.get('https://graph.zalo.me/v2.0/me/info', {
-            headers: { 'access_token': accessToken, 'code': phoneToken, 'secret_key': ZALO_SECRET_KEY }
-        });
-
-        if (zaloResponse.data.error) {
-            return res.status(400).json({ error: "Giải mã thất bại", details: zaloResponse.data });
-        }
-
-        let realPhone = zaloResponse.data.data.number;
-        if (realPhone.startsWith('84')) realPhone = '0' + realPhone.slice(2);
-
-        // 2. Nếu giải mã SĐT thành công, update lại đúng số đó
+        // Dùng lệnh upsert: Nếu SĐT đã tồn tại -> Cập nhật tên mới. Nếu chưa có -> Thêm mới.
         const { data, error } = await supabase
             .from('customers')
-            .upsert([{ phone: realPhone, name: name, avatar: avatar }])
+            .upsert([{ phone, name }])
             .select();
 
         if (error) throw error;
+        res.json({ message: 'Lưu thông tin khách hàng thành công!', data });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
-        res.json({ success: true, phone: realPhone });
+// ==========================================
+// 3. XÓA KHÁCH HÀNG (DÀNH CHO ADMIN)
+// ==========================================
+router.delete('/:phone', async (req, res) => {
+    try {
+        const { phone } = req.params;
+
+        const { error } = await supabase
+            .from('customers')
+            .delete()
+            .eq('phone', phone);
+
+        if (error) throw error;
+        res.json({ message: 'Đã xóa lịch sử khách hàng thành công!' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
