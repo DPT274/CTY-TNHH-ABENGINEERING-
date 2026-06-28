@@ -5,8 +5,7 @@ const supabase = require('../config/supabase');
 // ===============================================
 // 1. ZALO APP GỬI YÊU CẦU GIA CÔNG LÊN HỆ THỐNG
 // ===============================================
-// Lưu ý: Endpoint này khớp với lệnh post(`${BASE_URL}/api/machining-request`) của Zalo
-router.post('/request', async (req, res) => {
+router.post('/machining-request', async (req, res) => {
     try {
         const { id, date, services, material, fileName, phone, email } = req.body;
 
@@ -38,8 +37,7 @@ router.post('/request', async (req, res) => {
 // ===============================================
 // 2. ADMIN/ZALO APP LẤY DANH SÁCH HỒ SƠ 
 // ===============================================
-// Lưu ý: Endpoint này khớp với lệnh get(`${BASE_URL}/api/machining-history`) của 2 bên
-router.get('/history', async (req, res) => {
+router.get('/machining-history', async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('machining_requests')
@@ -48,7 +46,7 @@ router.get('/history', async (req, res) => {
 
         if (error) throw error;
 
-        // Chuyển đổi tên biến (file_name -> fileName) để khớp 100% với Code Frontend của bạn
+        // Chuyển đổi tên biến (file_name -> fileName) để khớp 100% với Code Frontend
         const formattedData = data.map(item => ({
             id: item.id,
             date: item.date,
@@ -70,7 +68,7 @@ router.get('/history', async (req, res) => {
 // ===============================================
 // 3. ADMIN CẬP NHẬT TRẠNG THÁI TIẾN ĐỘ ĐƠN
 // ===============================================
-router.put('/request/:id', async (req, res) => {
+router.put('/machining-request/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
@@ -91,7 +89,7 @@ router.put('/request/:id', async (req, res) => {
 // ===============================================
 // 4. ADMIN XÓA BỎ HỒ SƠ GIA CÔNG
 // ===============================================
-router.delete('/request/:id', async (req, res) => {
+router.delete('/machining-request/:id', async (req, res) => {
     try {
         const { id } = req.params;
 
