@@ -40,7 +40,8 @@ app.use('/api/news', newsRoutes);
 app.use('/api/projects', projectRoutes);
 
 // Riêng phần gia công, dùng tiền tố này để khớp với /api/machining-request và /api/machining-history
-app.use('/api/machining-', machiningRoutes);
+// THAY BẰNG DÒNG NÀY (Chỉ giữ lại /api):
+app.use('/api', machiningRoutes);
 
 // =======================================================
 // 3. KHỞI ĐỘNG SERVER
