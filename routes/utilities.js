@@ -5,22 +5,40 @@ const supabase = require('../config/supabase');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 1. LẤY DANH SÁCH TIỆN ÍCH (Chốt thứ tự cố định theo ID)
+// 1. LẤY DANH SÁCH TIỆN ÍCH (Kèm tính năng tự động khởi tạo nếu DB trống)
 router.get('/', async (req, res) => {
     try {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
             .from('utilities')
             .select('*')
             .order('id', { ascending: true });
 
         if (error) throw error;
+
+        // TỰ ĐỘNG CHÈN 6 MỤC MẶC ĐỊNH NẾU DATABASE ĐANG TRỐNG
+        if (!data || data.length === 0) {
+            const defaultUtilities = [
+                { id: 1, name: 'Giới Thiệu', path: '/about', image: '' },
+                { id: 2, name: 'Dự án', path: '/projects', image: '' },
+                { id: 3, name: 'Tuyển Dụng', path: '/jobs', image: '' },
+                { id: 4, name: 'Tin Tức', path: '/news', image: '' },
+                { id: 5, name: 'Liên Hệ', path: '/hotline', image: '' },
+                { id: 6, name: 'Gia công', path: '/product-info', image: '' }
+            ];
+
+            const { error: insertError } = await supabase.from('utilities').insert(defaultUtilities);
+            if (insertError) throw insertError;
+
+            data = defaultUtilities; // Trả về luôn data vừa tạo cho Web Admin
+        }
+
         res.json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// 2. CHỈ CẬP NHẬT ICON (Khóa tính năng đổi tên/đường dẫn để bảo vệ cấu trúc Mini App)
+// 2. CHỈ CẬP NHẬT ICON
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -28,24 +46,18 @@ router.put('/:id', upload.single('image'), async (req, res) => {
 
         if (!file) return res.status(400).json({ error: 'Vui lòng chọn Icon mới!' });
 
-        // BƯỚC 1: Lấy link ảnh cũ để xóa khỏi Storage (Tiết kiệm dung lượng)
-        const { data: utility } = await supabase
-            .from('utilities')
-            .select('image')
-            .eq('id', id)
-            .single();
+        // Lấy link ảnh cũ để xóa khỏi Storage
+        const { data: utility } = await supabase.from('utilities').select('image').eq('id', id).single();
 
         if (utility && utility.image) {
-            // Tách chuỗi URL để lấy tên file thực tế trên Storage
             const parts = utility.image.split('/ab_engineering_bucket/');
             if (parts.length > 1) {
                 const fileName = parts[1];
-                // Xóa ảnh cũ
                 await supabase.storage.from('ab_engineering_bucket').remove([fileName]);
             }
         }
 
-        // BƯỚC 2: Tải ảnh mới lên Storage
+        // Tải ảnh mới
         const extension = file.originalname.split('.').pop();
         const newFileName = `utilities/${Date.now()}.${extension}`;
 
@@ -53,16 +65,12 @@ router.put('/:id', upload.single('image'), async (req, res) => {
             .from('ab_engineering_bucket')
             .upload(newFileName, file.buffer, { contentType: file.mimetype });
 
-        // Lấy URL công khai
         const { data: { publicUrl } } = supabase.storage
             .from('ab_engineering_bucket')
             .getPublicUrl(newFileName);
 
-        // BƯỚC 3: Lưu link ảnh mới vào DB
-        const { error } = await supabase
-            .from('utilities')
-            .update({ image: publicUrl })
-            .eq('id', id);
+        // Lưu link mới vào DB
+        const { error } = await supabase.from('utilities').update({ image: publicUrl }).eq('id', id);
 
         if (error) throw error;
         res.json({ message: 'Cập nhật Icon thành công!', imageUrl: publicUrl });
@@ -70,7 +78,5 @@ router.put('/:id', upload.single('image'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
-// KHÔNG CÓ ROUTER.POST (Thêm) VÀ ROUTER.DELETE (Xóa) ĐỂ CHỐT CỨNG 6 MỤC
 
 module.exports = router;
