@@ -5,13 +5,13 @@ const supabase = require('../config/supabase');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 1. LẤY DANH SÁCH TIỆN ÍCH
+// 1. LẤY DANH SÁCH TIỆN ÍCH (Chốt thứ tự cố định theo ID)
 router.get('/', async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('utilities')
             .select('*')
-            .order('id', { ascending: true }); // Chốt thứ tự theo ID
+            .order('id', { ascending: true });
 
         if (error) throw error;
         res.json(data);
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 2. CHỈ CẬP NHẬT ICON (Đã khóa chức năng sửa tên/đường dẫn)
+// 2. CHỈ CẬP NHẬT ICON (Khóa tính năng đổi tên/đường dẫn để bảo vệ cấu trúc Mini App)
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -28,7 +28,7 @@ router.put('/:id', upload.single('image'), async (req, res) => {
 
         if (!file) return res.status(400).json({ error: 'Vui lòng chọn Icon mới!' });
 
-        // Lấy link ảnh cũ để xóa khỏi Storage (Tiết kiệm dung lượng)
+        // BƯỚC 1: Lấy link ảnh cũ để xóa khỏi Storage (Tiết kiệm dung lượng)
         const { data: utility } = await supabase
             .from('utilities')
             .select('image')
@@ -36,14 +36,16 @@ router.put('/:id', upload.single('image'), async (req, res) => {
             .single();
 
         if (utility && utility.image) {
+            // Tách chuỗi URL để lấy tên file thực tế trên Storage
             const parts = utility.image.split('/ab_engineering_bucket/');
             if (parts.length > 1) {
                 const fileName = parts[1];
+                // Xóa ảnh cũ
                 await supabase.storage.from('ab_engineering_bucket').remove([fileName]);
             }
         }
 
-        // Tải ảnh mới lên
+        // BƯỚC 2: Tải ảnh mới lên Storage
         const extension = file.originalname.split('.').pop();
         const newFileName = `utilities/${Date.now()}.${extension}`;
 
@@ -51,11 +53,12 @@ router.put('/:id', upload.single('image'), async (req, res) => {
             .from('ab_engineering_bucket')
             .upload(newFileName, file.buffer, { contentType: file.mimetype });
 
+        // Lấy URL công khai
         const { data: { publicUrl } } = supabase.storage
             .from('ab_engineering_bucket')
             .getPublicUrl(newFileName);
 
-        // Lưu link ảnh mới vào DB
+        // BƯỚC 3: Lưu link ảnh mới vào DB
         const { error } = await supabase
             .from('utilities')
             .update({ image: publicUrl })
@@ -68,6 +71,6 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     }
 });
 
-// KHÔNG CÓ ROUTER.POST VÀ ROUTER.DELETE NỮA
+// KHÔNG CÓ ROUTER.POST (Thêm) VÀ ROUTER.DELETE (Xóa) ĐỂ CHỐT CỨNG 6 MỤC
 
 module.exports = router;
