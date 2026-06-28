@@ -5,7 +5,7 @@ const supabase = require('../config/supabase');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 1. LẤY DANH SÁCH SẢN PHẨM (Dùng cho cả Web User, Admin và Zalo App)
+// 1. LẤY DANH SÁCH SẢN PHẨM
 router.get('/', async (req, res) => {
     try {
         const { data, error } = await supabase
@@ -20,27 +20,27 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 2. THÊM SẢN PHẨM MỚI VÀ UPLOAD ẢNH MÁY MÓC
+// 2. THÊM SẢN PHẨM MỚI VÀ UPLOAD ẢNH (Đã fix lỗi tên file tiếng Việt)
 router.post('/', upload.single('image'), async (req, res) => {
     try {
         const { name, description, is_featured } = req.body;
         const file = req.file;
         if (!file) return res.status(400).json({ error: 'Vui lòng chọn ảnh sản phẩm!' });
 
-        // Upload ảnh lên thư mục 'products/' trong bucket
-        const fileName = `products/${Date.now()}_${file.originalname}`;
+        // Tách đuôi file và đổi tên thành chuỗi số an toàn tuyệt đối
+        const extension = file.originalname.split('.').pop();
+        const fileName = `products/${Date.now()}.${extension}`;
+
         const { error: uploadError } = await supabase.storage
             .from('ab_engineering_bucket')
             .upload(fileName, file.buffer, { contentType: file.mimetype });
 
         if (uploadError) throw uploadError;
 
-        // Lấy link ảnh công khai
         const { data: { publicUrl } } = supabase.storage
             .from('ab_engineering_bucket')
             .getPublicUrl(fileName);
 
-        // Lưu thông tin vào bảng products
         const { data, error: insertError } = await supabase
             .from('products')
             .insert([{
@@ -58,7 +58,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// 3. SỬA THÔNG TIN SẢN PHẨM
+// 3. SỬA THÔNG TIN SẢN PHẨM (Đã fix lỗi tên file)
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -71,9 +71,10 @@ router.put('/:id', upload.single('image'), async (req, res) => {
             is_featured: is_featured === 'true' || is_featured === true
         };
 
-        // Nếu người dùng có chọn ảnh mới thì mới upload lại
         if (file) {
-            const fileName = `products/${Date.now()}_${file.originalname}`;
+            const extension = file.originalname.split('.').pop();
+            const fileName = `products/${Date.now()}.${extension}`;
+
             await supabase.storage
                 .from('ab_engineering_bucket')
                 .upload(fileName, file.buffer, { contentType: file.mimetype });
@@ -94,12 +95,33 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     }
 });
 
-// 4. XÓA SẢN PHẨM
+// 4. XÓA SẢN PHẨM (Nâng cấp: Dọn sạch ảnh trên Cloud khi xóa)
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Lấy link ảnh trước khi xóa
+        const { data: product, error: fetchError } = await supabase
+            .from('products')
+            .select('image_url')
+            .eq('id', id)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        // Xóa file ảnh trên Cloud
+        if (product && product.image_url) {
+            const parts = product.image_url.split('/ab_engineering_bucket/');
+            if (parts.length > 1) {
+                const fileName = parts[1];
+                await supabase.storage.from('ab_engineering_bucket').remove([fileName]);
+            }
+        }
+
+        // Xóa dữ liệu trong DB
         const { error } = await supabase.from('products').delete().eq('id', id);
         if (error) throw error;
+
         res.json({ message: 'Đã xóa sản phẩm thành công!' });
     } catch (error) {
         res.status(500).json({ error: error.message });

@@ -6,7 +6,27 @@ const supabase = require('../config/supabase');
 // Cấu hình Multer lưu tạm file vào RAM
 const upload = multer({ storage: multer.memoryStorage() });
 
-// LẤY DANH SÁCH BANNER (Kèm thời gian lướt)
+// 1. LẤY DANH SÁCH BANNER CHO ZALO APP (Chỉ lấy banner đang BẬT)
+router.get('/', async (req, res) => {
+    try {
+        const { data: banners, error } = await supabase
+            .from('banners')
+            .select('image_url')
+            .eq('is_active', true) // Chốt chặn: Chỉ lấy ảnh đã được Admin bật
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Biến đổi cấu trúc mảng để khớp 100% với giao diện Zalo App của bạn
+        const imageUrls = banners.map(banner => banner.image_url);
+
+        res.json({ images: imageUrls });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 2. LẤY DANH SÁCH BANNER CHO ADMIN (Xem toàn bộ & Kèm thời gian lướt)
 router.get('/admin', async (req, res) => {
     try {
         const { data: banners, error } = await supabase
@@ -16,14 +36,13 @@ router.get('/admin', async (req, res) => {
 
         if (error) throw error;
 
-        // Trả về kèm cấu hình thời gian chuyển banner mặc định
         res.json({ banners: banners, duration: 3000 });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// THÊM BANNER MỚI (Đã tối ưu hóa đặt tên file an toàn)
+// 3. THÊM BANNER MỚI TỪ TRANG QUẢN TRỊ
 router.post('/', upload.single('image'), async (req, res) => {
     try {
         const file = req.file;
@@ -45,7 +64,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             .from('ab_engineering_bucket')
             .getPublicUrl(fileName);
 
-        // Lưu thông tin vào bảng banners trong Database
+        // Lưu thông tin vào Database
         const { data: insertData, error: insertError } = await supabase
             .from('banners')
             .insert([{ image_url: publicUrl, is_active: true }])
@@ -59,7 +78,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// CẬP NHẬT TRẠNG THÁI BANNER (Bật / Tạm ẩn)
+// 4. CẬP NHẬT TRẠNG THÁI BANNER (Bật / Tạm ẩn)
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -74,12 +93,12 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-// XÓA BANNER (Đã tối ưu dọn rác ảnh trên Storage)
+// 5. XÓA BANNER KHỎI DATABASE VÀ DỌN DẸP STORAGE
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 1. Lấy thông tin lấy link ảnh trước khi xóa dữ liệu bảng
+        // Lấy link ảnh trước khi xóa dữ liệu bảng
         const { data: banner, error: fetchError } = await supabase
             .from('banners')
             .select('image_url')
@@ -88,7 +107,7 @@ router.delete('/:id', async (req, res) => {
 
         if (fetchError) throw fetchError;
 
-        // 2. Nếu có ảnh, thực hiện xóa file gốc trên Storage
+        // Xóa file gốc trên Storage
         if (banner && banner.image_url) {
             const parts = banner.image_url.split('/ab_engineering_bucket/');
             if (parts.length > 1) {
@@ -97,7 +116,7 @@ router.delete('/:id', async (req, res) => {
             }
         }
 
-        // 3. Xóa dòng dữ liệu trong Database
+        // Xóa dòng dữ liệu trong Database
         const { error } = await supabase.from('banners').delete().eq('id', id);
         if (error) throw error;
 
