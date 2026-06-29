@@ -45,12 +45,14 @@ app.use('/api/projects', projectRoutes);
 app.use('/api', machiningRoutes);
 
 // =======================================================
-// 3. ĐIỀU HƯỚNG GIAO DIỆN WEB USER
+// 3. ĐIỀU HƯỚNG GIAO DIỆN WEB USER (Đã sửa lỗi Express 5.x)
 // =======================================================
-app.get('*', (req, res) => {
+app.use((req, res, next) => {
+    // Nếu request là gọi API mà không khớp route nào ở trên -> Trả về lỗi 404 JSON
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ success: false, error: 'API Not Found' });
     }
+    // Nếu request là chuyển trang trên Frontend -> Trả về file index.html để React/Vue tự xử lý
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
